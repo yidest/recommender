@@ -81,6 +81,7 @@ After processed CSV files and the Neural CF cache exist, reruns can usually star
 │   ├── model_store.py
 │   ├── models.py
 │   ├── ranking_metrics.py
+│   ├── recall_experiments.py
 │   ├── recommend.py
 │   └── user_profile.py
 ├── train.py
@@ -238,6 +239,20 @@ python -m src.benchmark_models \
 ```
 
 The benchmark evaluates `PopularityBaseline`, `TruncatedSVDModel`, `NeuralCollaborativeFiltering`, and `NeuralCFWithSVDRecall` on the same eligible held-out positive rows.
+
+Run an SVD recall-size sweep to study the quality/cost trade-off:
+
+```bash
+python -m src.recall_experiments \
+  --candidate-counts 100 250 500 1000 2000 \
+  --top-k 10 50 100 \
+  --max-users 1000 \
+  --output reports/svd_recall_experiments.csv
+```
+
+Use this report to choose a recall size that balances ranking quality and candidate set size. The current default is `1000` SVD candidates.
+
+Smaller sweeps such as `--candidate-counts 100 250 500` are useful for quick checks. Use `--max-users 1000` or higher before changing the default because small samples can favor a different recall size.
 
 Evaluate one Neural CF checkpoint directly:
 
