@@ -120,7 +120,13 @@ def benchmark_models(args: argparse.Namespace) -> pd.DataFrame:
     neural_candidate_indices = sorted(neural_idx_to_movie)
 
     rows_by_model_k: dict[tuple[str, int], dict[str, float | int | str]] = {}
-    for model_name in ["PopularityBaseline", "TruncatedSVDModel", "NeuralCollaborativeFiltering"]:
+    model_names = [
+        "PopularityBaseline",
+        "TruncatedSVDModel",
+        "NeuralCollaborativeFiltering",
+        "NeuralCFWithSVDRecall",
+    ]
+    for model_name in model_names:
         for top_k in top_ks:
             rows_by_model_k[(model_name, top_k)] = {
                 "model": model_name,
@@ -162,6 +168,12 @@ def benchmark_models(args: argparse.Namespace) -> pd.DataFrame:
 
         popularity_top_ids = top_popular_movie_ids(popularity_ranking, rated_movie_ids, max_top_k)
         svd_top_ids = top_k_movie_ids(svd_model, user_id, candidate_movie_ids, max_top_k)
+        svd_recall_ids = top_k_movie_ids(
+            svd_model,
+            user_id,
+            candidate_movie_ids,
+            max(args.svd_recall_size, max_top_k),
+        )
 
         rated_movie_indices = {
             neural_movie_to_idx[movie_id]
@@ -190,11 +202,37 @@ def benchmark_models(args: argparse.Namespace) -> pd.DataFrame:
         ]
         neural_top_ids = [neural_idx_to_movie[movie_idx] for movie_idx in neural_top_indices]
 
+        svd_recall_candidate_indices = [
+            neural_movie_to_idx[movie_id]
+            for movie_id in svd_recall_ids
+            if movie_id in neural_movie_to_idx
+        ]
+        neural_recall_scored = score_candidate_movies(
+            model=neural_model,
+            user_idx=neural_user_to_idx[user_id],
+            candidate_movie_indices=svd_recall_candidate_indices,
+            device=device,
+            batch_size=args.batch_size,
+        )
+        neural_recall_top_indices = [
+            movie_idx
+            for _, movie_idx in heapq.nlargest(
+                max_top_k,
+                neural_recall_scored,
+                key=lambda item: (item[0], -item[1]),
+            )
+        ]
+        neural_recall_top_ids = [
+            neural_idx_to_movie[movie_idx]
+            for movie_idx in neural_recall_top_indices
+        ]
+
         hit_summary = summarize_hits(
             {
                 "PopularityBaseline": popularity_top_ids,
                 "TruncatedSVDModel": svd_top_ids,
                 "NeuralCollaborativeFiltering": neural_top_ids,
+                "NeuralCFWithSVDRecall": neural_recall_top_ids,
             },
             held_out_movie_id=held_out_movie_id,
             top_ks=top_ks,
@@ -206,7 +244,12 @@ def benchmark_models(args: argparse.Namespace) -> pd.DataFrame:
                 output_row["evaluated_items"] = int(output_row["evaluated_items"]) + 1
                 output_row["hits"] = int(output_row["hits"]) + hit
                 output_row["ndcg_sum"] = float(output_row["ndcg_sum"]) + ndcg
-                output_row["candidate_count_sum"] = int(output_row["candidate_count_sum"]) + len(candidate_movie_ids)
+                candidate_count = (
+                    len(svd_recall_candidate_indices)
+                    if model_name == "NeuralCFWithSVDRecall"
+                    else len(candidate_movie_ids)
+                )
+                output_row["candidate_count_sum"] = int(output_row["candidate_count_sum"]) + candidate_count
 
         evaluated += 1
 
@@ -236,6 +279,12 @@ def main() -> None:
     parser.add_argument("--rating-threshold", type=float, default=4.0)
     parser.add_argument("--svd-model-path", type=Path, default=TRAINED_MODEL_PATH)
     parser.add_argument("--neural-model-path", type=Path, default=NEURAL_CF_MODEL_PATH)
+    parser.add_argument(
+        "--svd-recall-size",
+        type=int,
+        default=1000,
+        help="Number of SVD candidates for the NeuralCFWithSVDRecall benchmark row.",
+    )
     parser.add_argument("--batch-size", type=int, default=2048)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--output", type=Path, help="Optional CSV path for benchmark results.")

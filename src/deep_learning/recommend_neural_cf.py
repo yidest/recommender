@@ -38,6 +38,7 @@ def recommend_for_user(
     top_n: int,
     batch_size: int,
     device: torch.device,
+    candidate_movie_ids: list[int] | None = None,
 ) -> pd.DataFrame:
     model, metadata = load_neural_cf_checkpoint(model_path, device)
     user_to_idx = {int(raw_user_id): int(user_idx) for raw_user_id, user_idx in metadata["user_to_idx"].items()}
@@ -59,11 +60,21 @@ def recommend_for_user(
         for movie_id in rated_movie_ids
         if movie_id in movie_to_idx
     }
-    candidate_movie_indices = [
-        movie_idx
-        for movie_idx in sorted(idx_to_movie)
-        if movie_idx not in rated_movie_indices
-    ]
+    if candidate_movie_ids is None:
+        candidate_movie_indices = [
+            movie_idx
+            for movie_idx in sorted(idx_to_movie)
+            if movie_idx not in rated_movie_indices
+        ]
+    else:
+        candidate_movie_indices = [
+            movie_to_idx[movie_id]
+            for movie_id in candidate_movie_ids
+            if movie_id in movie_to_idx and movie_to_idx[movie_id] not in rated_movie_indices
+        ]
+    if not candidate_movie_indices:
+        raise ValueError("No candidate movies are available for Neural CF recommendation.")
+
     scored = score_candidate_movies(
         model=model,
         user_idx=user_to_idx[user_id],

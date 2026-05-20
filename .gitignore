@@ -18,3 +18,6 @@ reports/
 *.log
 .env
 .DS_Store
+
+# Local development notes
+dev_logs/

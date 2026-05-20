@@ -14,15 +14,16 @@ Raw datasets, processed CSV files, trained checkpoints, caches, and generated re
 
 The fixed benchmark evaluates all models on the same eligible held-out positive rows. Ratings greater than or equal to `4.0` are treated as positive items.
 
-Sample benchmark with `--max-users 100`:
+Sample benchmark with `--max-users 1000` and `--svd-recall-size 1000`:
 
 | model | HitRate@10 | NDCG@10 | HitRate@50 | NDCG@50 | HitRate@100 | NDCG@100 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| PopularityBaseline | 0.0100 | 0.0029 | 0.0400 | 0.0095 | 0.0600 | 0.0128 |
-| TruncatedSVDModel | 0.0100 | 0.0100 | 0.0400 | 0.0165 | 0.0800 | 0.0230 |
-| NeuralCollaborativeFiltering | 0.0200 | 0.0133 | 0.0600 | 0.0220 | 0.0900 | 0.0271 |
+| PopularityBaseline | 0.0070 | 0.0034 | 0.0330 | 0.0089 | 0.0551 | 0.0125 |
+| TruncatedSVDModel | 0.0060 | 0.0040 | 0.0290 | 0.0089 | 0.0591 | 0.0138 |
+| NeuralCollaborativeFiltering | 0.0180 | 0.0080 | 0.0601 | 0.0168 | 0.1021 | 0.0236 |
+| NeuralCFWithSVDRecall | 0.0200 | 0.0091 | 0.0641 | 0.0184 | 0.1101 | 0.0258 |
 
-Neural CF is the current main model because it performs best on the ranking benchmark.
+Neural CF with SVD candidate recall is the current main recommendation path because it performs best on the ranking benchmark.
 
 A larger `TruncatedSVDModel` vs `NeuralCollaborativeFiltering` comparison also showed Neural CF ahead at `K=100`:
 
@@ -38,7 +39,7 @@ python train.py --force-process
 python -m src.deep_learning.prepare_neural_cf_data
 python -m src.deep_learning.train_neural_cf --epochs 20 --batch-size 1024 --patience 3
 python -m src.recommend --user-id 1488844 --top-n 5
-python -m src.benchmark_models --top-k 10 50 100 --max-users 1000
+python -m src.benchmark_models --top-k 10 50 100 --max-users 1000 --svd-recall-size 1000
 ```
 
 After processed CSV files and the Neural CF cache exist, reruns can usually start from training or recommendation.
@@ -48,7 +49,7 @@ After processed CSV files and the Neural CF cache exist, reruns can usually star
 - Parse raw movie rating data into train/test CSV files.
 - Prepare reusable Neural CF interaction data for faster full-data training.
 - Train Neural Collaborative Filtering with user/movie embeddings, an MLP scorer, BPR loss, early stopping, and configurable negative sampling.
-- Recommend Top-N movies for an existing user with the Neural CF checkpoint.
+- Recommend Top-N movies for an existing user with SVD candidate recall and Neural CF reranking.
 - Compare Neural CF against Popularity and TruncatedSVD on fixed ranking benchmarks.
 - Keep traditional RMSE baselines: `GlobalMeanModel`, `BiasModel`, and `TruncatedSVDModel`.
 - Export recommendations and benchmark results to CSV.
@@ -61,7 +62,6 @@ After processed CSV files and the Neural CF cache exist, reruns can usually star
 ├── data/
 │   ├── raw/
 │   └── processed/
-├── dev_logs/
 ├── docs/
 ├── models/
 ├── reports/
@@ -159,6 +159,8 @@ Train the Neural CF main model:
 python -m src.deep_learning.train_neural_cf --epochs 20 --batch-size 1024 --patience 3
 ```
 
+Current training defaults use `embedding_dim=64` and `hidden_dims=[128, 64]`, selected from a small validation/BPR and ranking benchmark sweep as a balanced next-training structure. Existing checkpoints still load their saved architecture metadata.
+
 A practical full-cache sampled run:
 
 ```bash
@@ -200,6 +202,18 @@ Recommend movies with the Neural CF main model:
 python -m src.recommend --user-id 1488844 --top-n 5
 ```
 
+By default, `src.recommend` uses TruncatedSVD to recall candidate movies, then reranks those candidates with Neural CF. Tune the recall size:
+
+```bash
+python -m src.recommend --user-id 1488844 --top-n 5 --candidate-count 1000
+```
+
+Use full-catalog Neural CF scoring instead of SVD recall:
+
+```bash
+python -m src.recommend --user-id 1488844 --top-n 5 --candidate-source full
+```
+
 Save recommendations to CSV:
 
 ```bash
@@ -216,10 +230,14 @@ The Neural CF score is a ranking score, not a calibrated 1-5 star rating.
 Run the fixed benchmark with multiple K values:
 
 ```bash
-python -m src.benchmark_models --top-k 10 50 100 --max-users 1000 --output reports/fixed_benchmark.csv
+python -m src.benchmark_models \
+  --top-k 10 50 100 \
+  --max-users 1000 \
+  --svd-recall-size 1000 \
+  --output reports/fixed_benchmark.csv
 ```
 
-The benchmark evaluates `PopularityBaseline`, `TruncatedSVDModel`, and `NeuralCollaborativeFiltering` on the same eligible held-out positive rows.
+The benchmark evaluates `PopularityBaseline`, `TruncatedSVDModel`, `NeuralCollaborativeFiltering`, and `NeuralCFWithSVDRecall` on the same eligible held-out positive rows.
 
 Evaluate one Neural CF checkpoint directly:
 
@@ -304,7 +322,7 @@ python -m src.recommend --user-id 1488844 --top-n 5
 Run a small benchmark:
 
 ```bash
-python -m src.benchmark_models --top-k 10 50 100 --max-users 100
+python -m src.benchmark_models --top-k 10 50 100 --max-users 100 --svd-recall-size 1000
 ```
 
 ## Current Limitations

@@ -230,8 +230,8 @@ def train_neural_cf(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train Neural CF with BPR loss.")
-    parser.add_argument("--embedding-dim", type=int, default=32)
-    parser.add_argument("--hidden-dims", type=int, nargs="+", default=[64, 32])
+    parser.add_argument("--embedding-dim", type=int, default=64)
+    parser.add_argument("--hidden-dims", type=int, nargs="+", default=[128, 64])
     parser.add_argument("--dropout", type=float, default=0.2)
     parser.add_argument("--positive-threshold", type=float, default=4.0)
     parser.add_argument("--validation-fraction", type=float, default=0.1)
